@@ -1,0 +1,65 @@
+\chapter{Methodology}
+
+\section{Writing the Char Device Driver}
+
+%This section elaborates on the necessary steps to create the device driver implemented in this design. 
+
+The implemented char device driver support system calls such as \emph{open, close, read} and \emph{write} and enables asynchronous notification through the \emph{fasync} method. A file operations structure is declared to holds this functionality and refer them to the driver. An interrupt handler is setup to get input from the gamepad. 
+
+The initialization setup is held in the \emph{init} function which includes the setup of the char device and the interrupts. The char device setup follows the necessary steps, as listed:
+\begin{itemize}
+\item Char device registration.
+\item Class creation necessary for creating the device.
+\item Creating the device and \emph{/dev/}-instance.
+\item Initialize the char device and adding it to the kernel.
+\end{itemize}
+To enable the driver for interrupts the interrupt configuration registers are requested. The registers are set to enable interrupt on both falling and rising edge. 
+
+The driver supports a routine for when the driver is unloaded from the kernel.
+This is ensured by the \emph{exit} function which deallocates the requested memory region and deletes the device and all the structures used for device registration and class creation.
+
+The driver supports user space functionality through the functions \emph{open, release, read} and \emph{write}.
+The \emph{open} function requests interrupt handling for both EVEN and ODD pins and links the interrupts to the interrupt handler. Interrupt handling is disabled through the \emph{release} function.
+The \emph{read} function reads the button register and sends a copy of the inverted values through an input variable. This enables user space application to read the button values into a buffer. The \emph{write} function is left empty as the driver does not support this functionality.
+The \emph{open, release, read} and \emph{write} functions are linked to the file operations \emph{open, close, read} and \emph{write} respectively.
+
+The \emph{fasync} method registers processes to the list of interested processes to be invoked by asynchronous notification. All interested processes are notified by the interrupt handler function. 
+
+%\subsection{Old driver methodology}
+
+%The \emph{init} function is were the main setup of the driver occurs. 
+%First the char device is registered with a call to the function \texttt{int alloc\_chrdev\_region (dev\_t* dev, unsigned baseminor, unsigned count, const char* name)}. The char device is then registered with name and given a Major number. A call to \texttt{struct class* class\_create (struct module* owner, const char* name)} creates the class structure used to create the char device. Creating the char device and the \texttt{/dev/} instance is aquired by a call to \texttt{struct device* device\_create (struct class* class, struct device* parent, dev\_t devt, const char* fmt, ...)}. When the char device is created it is initialized and connected to the file operations with a call to \texttt{void cdev\_init (struct cdev* cdev, const struct file\_operations* fops)}. Complete the char device setup and adding the char device to the kernel with \texttt{int cdev\_add (struct cdev* p, dev\_t dev, unsigned count)}.
+
+%To specify the functionality of the char device driver it is necessary to declare a structure for the file operations. The \emph{open, close, read and write} functions and the owner of the module are linked to this struct. 
+
+
+%The \emph{exit} function is responsible of delete all structures and release the device driver from the memory.
+
+%\subsection{Asynchronous Notification}
+
+%The file operations struct used for the driver methods such as read, write, open and release, supports a method for asynchronous notification. This method can be used together with interrupts to signal a user space application. The user space application can then handle this interrupt accordingly. 
+
+%To setup asynchronous notification it is necessary to call the \emph{fasync\_helper} function \cite{fasync} from within the fasync method of the file operations struct. This function is invoked when the FASYNC flag changes for an open file, in user space, and will add or remove entries from the list of interested processes \cite{fasync}. A call to the \emph{kill\_fasync} function will signal the processes or process group interested. Usual signal parameters for \emph{kill\_fasync} is SIGIO \cite{fasync}.
+
+%Functions are included in $<linux/fs.h>$.
+
+\section{Pong}
+
+The actual game application is a simplified version of the famous arcade game, \textit{Pong}. Even though most implementations features a multi-player environment,  this game is designed only with a single-player mode. The goal of the game is simple: Prevent a constantly moving ball from leaving a room using a controllable bat. The room has three walls and an open edge. The bat is a static bar with the ability to move left and right along the open edge, located at the bottom. Upon hitting the ball with the bat, the ball's direction is changed relative to the distance from the middle of the bat, with a perfect hit sending the ball straight forward. The game is made more challenging by having the ball move faster the longer you prevent it from exiting the room. 
+How can this game be designed to consume the least energy? There are several considerations that can be made, some are described in the following.
+
+Pong is a dynamic game, meaning the ball will always be moving no matter what the user does. Because of this, the CPU can't be allowed to sleep when the user isn't doing anything because game data and output must be updated periodically. 
+
+\section{Kernel ticker}
+
+One problem with reducing the power consumption using Linux is the scheduler. The kernel maintains a so called "kernel ticker" which wakes up the kernel with a frequency of 100Hz \cite{tickless}. This is used to resume processes for which an timer related event has occurred. Waking the CPU at such a frequency is costly in terms of power consumption. Fortunately, the Linux kernel has the ability to enable a so called "tick-less kernel". In this scheme, the kernel calculates the time it needs to wake-up for the next event. By using this scheme, one reduces the number of timer interrupts drastically. Using the "tick-less kernel" option should contribute to lower the overall power consumption.
+
+\section{Power Saving: Considerations}
+%This section might not be necessary
+uCLinux controls most of the EFM32GG subsystems, including the clock tree. Power saving techniques is therefore somewhat constrained to what the operating system actually supports. Fortunately, uCLinux is designed with energy efficiency in mind. 
+
+\subsection{I/O Considerations}
+
+Pong requires some kind of display for interaction and to show game objects such as ball and bat. Screens vary in resolution, pixel technology, color support, and brightness levels which further results in different energy demands for every screen. 
+
+To print graphical objects or text on the screen, bits must be changed in the frame buffer. In order to see the change of bits on the screen, it must be refreshed. In order to achieve efficiency, refreshing should be done at a minimum. The game application is optimized to only refresh the display sections which has movement. This makes the refresh procedure very fast, which in term enables us to hibernate the CPU for several milliseconds between each screen refresh. This is also made possible by utilizing an interrupt based scheme for the game pad, so that CPU does not need to waste cycles to check for user input.  
